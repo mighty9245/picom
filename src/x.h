@@ -132,38 +132,40 @@ struct x_monitors {
 	region_t *regions;
 };
 
-#define XCB_AWAIT_VOID(func, c, ...)                                                     \
-	/* NOLINTBEGIN(bugprone-assignment-in-if-condition) */                           \
-	({                                                                               \
-		bool __success = true;                                                   \
-		__auto_type __e = xcb_request_check(c, func##_checked(c, __VA_ARGS__));  \
-		if (__e) {                                                               \
-			x_print_error(__e->sequence, __e->major_code, __e->minor_code,   \
-			              __e->error_code);                                  \
-			free(__e);                                                       \
-			__success = false;                                               \
-		}                                                                        \
-		__success;                                                               \
+#define XCB_AWAIT_VOID(func, conn, ...)                                                   \
+	/* NOLINTBEGIN(bugprone-assignment-in-if-condition) */                            \
+	({                                                                                \
+		bool __success = true;                                                    \
+		__auto_type __e =                                                         \
+		    xcb_request_check((conn)->c, func##_checked((conn)->c, __VA_ARGS__)); \
+		if (__e) {                                                                \
+			x_print_error(conn, __e->sequence, __e->major_code,               \
+			              __e->minor_code, __e->error_code);                  \
+			free(__e);                                                        \
+			__success = false;                                                \
+		}                                                                         \
+		__success;                                                                \
 	}) /* NOLINTEND(bugprone-assignment-in-if-condition) */
 
-#define XCB_AWAIT(func, c, ...)                                                          \
+#define XCB_AWAIT(func, conn, ...)                                                       \
 	({                                                                               \
 		xcb_generic_error_t *__e = NULL;                                         \
-		__auto_type __r = func##_reply(c, func(c, __VA_ARGS__), &__e);           \
+		__auto_type __r =                                                        \
+		    func##_reply((conn)->c, func((conn)->c, __VA_ARGS__), &__e);         \
 		if (__e) {                                                               \
-			x_print_error(__e->sequence, __e->major_code, __e->minor_code,   \
-			              __e->error_code);                                  \
+			x_print_error(conn, __e->sequence, __e->major_code,              \
+			              __e->minor_code, __e->error_code);                 \
 			free(__e);                                                       \
 		}                                                                        \
 		__r;                                                                     \
 	})
 
-#define log_debug_x_error(e, fmt, ...)                                                   \
-	LOG(DEBUG, fmt " (%s)", ##__VA_ARGS__, x_strerror(e))
-#define log_error_x_error(e, fmt, ...)                                                   \
-	LOG(ERROR, fmt " (%s)", ##__VA_ARGS__, x_strerror(e))
-#define log_fatal_x_error(e, fmt, ...)                                                   \
-	LOG(FATAL, fmt " (%s)", ##__VA_ARGS__, x_strerror(e))
+#define log_debug_x_error(c, e, fmt, ...)                                                \
+	LOG(DEBUG, fmt " (%s)", ##__VA_ARGS__, x_strerror(c, e))
+#define log_error_x_error(c, e, fmt, ...)                                                \
+	LOG(ERROR, fmt " (%s)", ##__VA_ARGS__, x_strerror(c, e))
+#define log_fatal_x_error(c, e, fmt, ...)                                                \
+	LOG(FATAL, fmt " (%s)", ##__VA_ARGS__, x_strerror(c, e))
 
 // xcb-render specific macros
 #define XFIXED_TO_DOUBLE(value) (((double)(value)) / 65536)
@@ -377,10 +379,10 @@ void x_free_picture(struct x_connection *c, xcb_render_picture_t p);
 /**
  * Log a X11 error
  */
-void x_print_error_impl(unsigned long serial, uint8_t major, uint16_t minor,
-                        uint8_t error_code, const char *func);
-#define x_print_error(serial, major, minor, error_code)                                  \
-	x_print_error_impl(serial, major, minor, error_code, __func__)
+void x_print_error_impl(struct x_connection *c, unsigned long serial, uint8_t major,
+                        uint16_t minor, uint8_t error_code, const char *func);
+#define x_print_error(c, serial, major, minor, error_code)                               \
+	x_print_error_impl(c, serial, major, minor, error_code, __func__)
 
 /*
  * Convert a xcb_generic_error_t to a string that describes the error
@@ -388,7 +390,7 @@ void x_print_error_impl(unsigned long serial, uint8_t major, uint16_t minor,
  * @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
  *         for multiple calls to this function,
  */
-const char *x_strerror(const xcb_generic_error_t *e);
+const char *x_strerror(struct x_connection *c, const xcb_generic_error_t *e);
 
 void x_flush(struct x_connection *c);
 
