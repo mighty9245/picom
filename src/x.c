@@ -201,7 +201,7 @@ void x_set_error_action(struct x_connection *c, uint32_t sequence, enum x_error_
 	x_await_request(c, &req->base);
 }
 
-static xcb_generic_event_t *x_feed_event(struct x_connection *c, xcb_generic_event_t *e);
+static bool x_feed_event(struct x_connection *c, xcb_generic_event_t *e);
 
 /**
  * Xlib error handler function.
@@ -213,7 +213,7 @@ static int xerror(Display attr_unused *dpy, XErrorEvent *ev) {
 	}
 
 	// Fake a xcb error, fill in just enough information
-	xcb_generic_error_t xcb_err;
+	xcb_generic_error_t xcb_err = {};
 	xcb_err.full_sequence = (uint32_t)ev->serial;
 	xcb_err.major_code = ev->request_code;
 	xcb_err.minor_code = ev->minor_code;
@@ -1028,12 +1028,12 @@ static void x_complete_async_requests(struct x_connection *c, xcb_generic_event_
 	}
 }
 
-static xcb_generic_event_t *x_feed_event(struct x_connection *c, xcb_generic_event_t *e) {
+static bool x_feed_event(struct x_connection *c, xcb_generic_event_t *e) {
 	x_complete_async_requests(c, e);
 	x_ingest_event(c, e);
 
 	if (e->response_type != 0) {
-		return e;
+		return true;
 	}
 
 	// We received an error, handle it and return NULL so we try again to see if there
@@ -1054,8 +1054,7 @@ static xcb_generic_event_t *x_feed_event(struct x_connection *c, xcb_generic_eve
 		         x_error_code_to_string(error->full_sequence, error->major_code,
 		                                error->minor_code, error->error_code));
 	}
-	free(e);
-	return NULL;
+	return false;
 }
 
 bool x_prepare_for_sleep(struct x_connection *c) {
@@ -1079,13 +1078,15 @@ bool x_prepare_for_sleep(struct x_connection *c) {
 }
 
 xcb_generic_event_t *x_poll_for_event(struct x_connection *c, bool queued) {
-	xcb_generic_event_t *ret = NULL;
-	while (ret == NULL) {
+	while (true) {
 		auto e = queued ? xcb_poll_for_queued_event(c->c) : xcb_poll_for_event(c->c);
 		if (e == NULL) {
 			break;
 		}
-		ret = x_feed_event(c, e);
+		if (x_feed_event(c, e)) {
+			return e;
+		}
+		free(e);
 	}
-	return ret;
+	return NULL;
 }
